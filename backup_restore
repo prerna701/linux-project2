@@ -1,34 +1,175 @@
 #!/bin/bash
 
-# Backup and Restore Script
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+   echo "This script must be run as root" 
+   exit 1
+fi
 
-BACKUP_DIR="/path/to/backup"  # Change this to your backup directory
-
-function backup() {
-    read -p "Enter directory to backup: " dir
-    tar -czf "$BACKUP_DIR/$(basename "$dir")_backup_$(date +%Y%m%d).tar.gz" "$dir"
-    echo "Backup of $dir completed."
+# Function to print section headers
+section() {
+  echo -e "\n\n======== $1 ========"
 }
 
-function restore() {
-    read -p "Enter backup file to restore: " backup_file
-    tar -xzf "$BACKUP_DIR/$backup_file" -C /
-    echo "Restoration of $backup_file completed."
+# Update System
+section "Updating system packages"
+yum update -y
+
+# Install Apache, MySQL, and PHP (LAMP Stack)
+section "Installing LAMP Stack"
+yum install -y httpd mariadb-server mariadb php php-mysql php-cli php-gd php-xml
+systemctl start httpd mariadb
+systemctl enable httpd mariadb
+
+# Secure MySQL Installation with Default Settings
+section "Securing MySQL installation"
+mysql_secure_installation <<EOF
+y
+n
+y
+y
+y
+EOF
+
+# Configure Firewall for Web Traffic
+section "Configuring firewall for HTTP and HTTPS"
+firewall-cmd --permanent --add-service=http
+firewall-cmd --permanent --add-service=https
+firewall-cmd --reload
+
+# Security Hardening
+section "Applying basic security hardening"
+
+# Disable root login via SSH
+echo "Disabling root SSH login and changing SSH port..."
+sed -i 's/^#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
+sed -i 's/^#Port 22/Port 2200/' /etc/ssh/sshd_config
+systemctl restart sshd
+
+# Disable SELinux
+echo "Disabling SELinux..."
+setenforce 0
+sed -i 's/^SELINUX=enforcing/SELINUX=disabled/' /etc/selinux/config
+
+# Install Fail2Ban for Basic Security
+section "Installing Fail2Ban for SSH brute force protection"
+yum install epel-release -y
+yum install fail2ban -y
+systemctl start fail2ban
+systemctl enable fail2ban
+
+# Setup a Default User
+DEFAULT_USER="adminuser"
+DEFAULT_PASSWORD="defaultpassword"
+section "Creating default user $DEFAULT_USER"
+useradd $DEFAULT_USER
+echo "$DEFAULT_USER:$DEFAULT_PASSWORD" | chpasswd
+echo "$DEFAULT_USER ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers.d/$DEFAULT_USER
+
+# Configure Default Database
+DEFAULT_DB="defaultdb"
+DEFAULT_DB_USER="dbuser"
+DEFAULT_DB_PASS="dbpassword"
+section "Configuring MySQL database"
+mysql -u root -e "CREATE DATABASE $DEFAULT_DB;"
+mysql -u root -e "CREATE USER '$DEFAULT_DB_USER'@'localhost' IDENTIFIED BY '$DEFAULT_DB_PASS';"
+mysql -u root -e "GRANT ALL PRIVILEGES ON $DEFAULT_DB.* TO '$DEFAULT_DB_USER'@'localhost';"
+mysql -u root -e "FLUSH PRIVILEGES;"
+
+# Server Health Monitoring
+section "Setting up server health monitoring"
+
+# Install sysstat for system performance tools
+yum install sysstat -y
+mkdir -p /var/log/health_logs
+
+cat << 'EOF' > /usr/local/bin/health_monitor.sh
+#!/bin/bash
+# Health Monitoring Script
+
+LOG_FILE="/var/log/health_logs/health.log"
+echo "CPU and Memory Usage at $(date)" >> $LOG_FILE
+top -b -n 1 | head -n 10 >> $LOG_FILE
+echo "Disk Usage:" >> $LOG_FILE
+df -h >> $LOG_FILE
+echo -e "\n------------------------\n" >> $LOG_FILE
+EOF
+
+chmod +x /usr/local/bin/health_monitor.sh
+echo "*/30 * * * * root /usr/local/bin/health_monitor.sh" >> /etc/crontab
+
+# Scheduled Backups
+section "Setting up daily backups"
+
+# Backup directories
+BACKUP_DIR="/var/backups"
+mkdir -p $BACKUP_DIR
+
+cat << 'EOF' > /usr/local/bin/backup.sh
+#!/bin/bash
+# Backup Script
+
+DATE=$(date +%F)
+DB_BACKUP="/var/backups/db_backup_$DATE.sql"
+WEB_BACKUP="/var/backups/web_backup_$DATE.tar.gz"
+
+# Database Backup
+mysqldump -u root --all-databases > $DB_BACKUP
+
+# Web Directory Backup
+tar -czf $WEB_BACKUP /var/www/html
+
+# Delete old backups (older than 7 days)
+find /var/backups -type f -mtime +7 -exec rm {} \;
+EOF
+
+chmod +x /usr/local/bin/backup.sh
+echo "0 2 * * * root /usr/local/bin/backup.sh" >> /etc/crontab
+
+# Log Management for Apache
+section "Configuring log rotation for Apache logs"
+cat << 'EOF' > /etc/logrotate.d/httpd
+/var/log/httpd/*log {
+    daily
+    missingok
+    rotate 14
+    compress
+    delaycompress
+    notifempty
+    create 640 root adm
+    sharedscripts
+    postrotate
+        /usr/bin/systemctl reload httpd > /dev/null 2>/dev/null || true
+    endscript
 }
+EOF
 
-function main() {
-    echo "Backup and Restore"
-    echo "1. Backup Directory"
-    echo "2. Restore Backup"
-    echo "3. Exit"
-    read -p "Choose an option: " option
+# Email Alerts for High Resource Usage
+section "Setting up email alerts for high CPU/Memory usage"
+yum install -y mailx
+cat << 'EOF' > /usr/local/bin/resource_alert.sh
+#!/bin/bash
+# Resource Alert Script
 
-    case $option in
-        1) backup ;;
-        2) restore ;;
-        3) exit 0 ;;
-        *) echo "Invalid option." ;;
-    esac
-}
+CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1"%"}')
+MEMORY_USAGE=$(free | grep Mem | awk '{print $3/$2 * 100.0}')
 
-main
+if (( $(echo "$CPU_USAGE > 80.0" |bc -l) )); then
+    echo "CPU usage is high: $CPU_USAGE" | mail -s "CPU Alert" admin@yourdomain.com
+fi
+
+if (( $(echo "$MEMORY_USAGE > 80.0" |bc -l) )); then
+    echo "Memory usage is high: $MEMORY_USAGE%" | mail -s "Memory Alert" admin@yourdomain.com
+fi
+EOF
+
+chmod +x /usr/local/bin/resource_alert.sh
+echo "*/10 * * * * root /usr/local/bin/resource_alert.sh" >> /etc/crontab
+
+# Final Summary
+section "Setup completed"
+echo "LAMP stack installed, user and database created."
+echo "Backups, health monitoring, log management, and security configurations are in place."
+echo "Default SSH port changed to 2200, Fail2Ban installed for SSH protection."
+echo "Email alerts for high resource usage configured (adjust email as needed)."
+echo "Setup is complete. Please check individual sections for further configuration if needed."
