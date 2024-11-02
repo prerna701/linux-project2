@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Network Monitoring Script
+
+function check_network() {
+    read -p "Enter hostname or IP to ping: " host
+    ping -c 4 "$host"
+}
+
+function check_open_ports() {
+    read -p "Enter hostname or IP to check open ports: " host
+    nmap "$host"
+}
+
+function main() {
+    echo "Network Monitoring"
+    echo "1. Ping Host"
+    echo "2. Check Open Ports"
+    echo "3. Exit"
+    read -p "Choose an option: " option
+
+    case $option in
+        1) check_network ;;
+        2) check_open_ports ;;
+        3) exit 0 ;;
+        *) echo "Invalid option." ;;
+    esac
+}
+
+main

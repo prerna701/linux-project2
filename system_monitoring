@@ -1,0 +1,27 @@
+#!/bin/bash
+
+# System Monitoring Script
+
+function cpu_usage() {
+    echo "CPU Usage:"
+    top -bn1 | grep "Cpu(s)"
+}
+
+function memory_usage() {
+    echo "Memory Usage:"
+    free -h
+}
+
+function disk_usage() {
+    echo "Disk Usage:"
+    df -h
+}
+
+function main() {
+    echo "System Monitoring"
+    cpu_usage
+    memory_usage
+    disk_usage
+}
+
+main

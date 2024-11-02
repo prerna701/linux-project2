@@ -1,0 +1,30 @@
+#!/bin/bash
+
+# Log Management Script
+
+function view_logs() {
+    echo "Viewing last 50 lines of syslog:"
+    tail -n 50 /var/log/syslog
+}
+
+function search_logs() {
+    read -p "Enter keyword to search in syslog: " keyword
+    grep "$keyword" /var/log/syslog
+}
+
+function main() {
+    echo "Log Management"
+    echo "1. View Logs"
+    echo "2. Search Logs"
+    echo "3. Exit"
+    read -p "Choose an option: " option
+
+    case $option in
+        1) view_logs ;;
+        2) search_logs ;;
+        3) exit 0 ;;
+        *) echo "Invalid option." ;;
+    esac
+}
+
+main

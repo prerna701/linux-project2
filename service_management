@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# Service Management Script
+
+function start_service() {
+    read -p "Enter service name to start: " service
+    sudo systemctl start "$service"
+}
+
+function stop_service() {
+    read -p "Enter service name to stop: " service
+    sudo systemctl stop "$service"
+}
+
+function status_service() {
+    read -p "Enter service name to check status: " service
+    systemctl status "$service"
+}
+
+function main() {
+    echo "Service Management"
+    echo "1. Start Service"
+    echo "2. Stop Service"
+    echo "3. Check Service Status"
+    echo "4. Exit"
+    read -p "Choose an option: " option
+
+    case $option in
+        1) start_service ;;
+        2) stop_service ;;
+        3) status_service ;;
+        4) exit 0 ;;
+        *) echo "Invalid option." ;;
+    esac
+}
+
+main

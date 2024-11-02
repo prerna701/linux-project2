@@ -1,0 +1,20 @@
+# Linux System Administration Toolkit
+
+This toolkit provides a suite of scripts to assist with common system administration tasks on Linux.
+
+## Features
+
+- User Management
+- System Monitoring
+- Service Management
+- Backup and Restore
+- Log Management
+- Network Monitoring
+
+## Installation
+
+1. Clone the repository.
+2. Navigate to the project directory.
+3. Make scripts executable:
+   ```bash
+   chmod +x *.sh
